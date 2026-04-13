@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ארכיון ההקלטות שלי</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;700&display=swap');
+        body { font-family: 'Assistant', sans-serif; background-color: #f3f4f6; }
+        .recording-card:hover { transform: translateY(-2px); transition: all 0.2s; }
+        .active-filter { background-color: #2563eb !important; color: white !important; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-5xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">ארכיון ההקלטות שלי</h1>
+            <p class="text-gray-600 mt-2">ניהול וחיפוש בתוך אלפי הקלטות</p>
+        </header>
+
+        <div class="bg-white p-6 rounded-xl shadow-sm mb-8">
+            <input type="text" id="searchInput" placeholder="חפש שם הקלטה, נושא או מילת מפתח..." 
+                   class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none">
+            
+            <div id="categoryFilters" class="flex flex-wrap gap-2 mt-2">
+                <button onclick="filterByCategory('הכל')" class="category-btn px-4 py-2 bg-gray-100 rounded-full text-sm hover:bg-gray-200 active-filter">הכל</button>
+            </div>
+        </div>
+
+        <div id="playerContainer" class="hidden bg-black rounded-xl p-4 mb-8 shadow-lg">
+            <div class="flex justify-between items-center mb-2">
+                <h3 id="nowPlayingTitle" class="text-white font-bold truncate"></h3>
+                <button onclick="closePlayer()" class="text-gray-400 hover:text-white">✕ סגור</button>
+            </div>
+            <div id="mediaArea" class="aspect-video w-full flex items-center justify-center bg-gray-900 rounded-lg overflow-hidden">
+                </div>
+        </div>
+
+        <div id="recordingsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="col-span-full text-center py-12 text-gray-500">טוען נתונים...</div>
+        </div>
+    </div>
+
+    <script>
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRSEVmdsLomn8AhcwZn3Y2yYjiaAZ1RtKQGURZbdMDbE_XesGIOOcB-J1Rujdl1LfKTHBp-EgYzwHJA/pub?output=csv';
+        let allRecordings = [];
+        let currentFilter = 'הכל';
+
+        // טעינת הנתונים מהגוגל שיטס
+        async function loadData() {
+            Papa.parse(CSV_URL, {
+                download: true,
+                header: true,
+                complete: function(results) {
+                    allRecordings = results.data.filter(row => row['שם ההקלטה']);
+                    renderCategories();
+                    renderRecordings();
+                }
+            });
+        }
+
+        // יצירת כפתורי הקטגוריות באופן דינמי
+        function renderCategories() {
+            const categories = ['הכל', ...new Set(allRecordings.map(r => r['קטגוריה']).filter(Boolean))];
+            const container = document.getElementById('categoryFilters');
+            container.innerHTML = categories.map(cat => `
+                <button onclick="filterByCategory('${cat}')" 
+                        class="category-btn px-4 py-2 bg-gray-100 rounded-full text-sm hover:bg-gray-200 ${cat === currentFilter ? 'active-filter' : ''}">
+                    ${cat}
+                </button>
+            `).join('');
+        }
+
+        // הצגת ההקלטות על המסך
+        function renderRecordings(filterText = '') {
+            const grid = document.getElementById('recordingsGrid');
+            const filtered = allRecordings.filter(r => {
+                const matchesCategory = currentFilter === 'הכל' || r['קטגוריה'] === currentFilter;
+                const matchesSearch = r['שם ההקלטה'].toLowerCase().includes(filterText.toLowerCase()) || 
+                                     (r['נושא'] && r['נושא'].toLowerCase().includes(filterText.toLowerCase()));
+                return matchesCategory && matchesSearch;
+            });
+
+            if (filtered.length === 0) {
+                grid.innerHTML = '<div class="col-span-full text-center py-12 text-gray-500">לא נמצאו הקלטות התואמות לחיפוש</div>';
+                return;
+            }
+
+            grid.innerHTML = filtered.map((r, index) => `
+                <div class="recording-card bg-white p-4 rounded-xl shadow-sm border border-gray-100 cursor-pointer" 
+                     onclick="playMedia('${index}', \`${r['שם ההקלטה']}\`, '${r['קישור לנגן ישיר']}', '${r['קישור מקור (ליוטיוב/דרייב)']}')">
+                    <div class="text-blue-600 text-xs font-bold mb-1">${r['קטגוריה'] || 'ללא קטגוריה'}</div>
+                    <h3 class="font-bold text-gray-800 line-clamp-2 mb-2 h-12">${r['שם ההקלטה']}</h3>
+                    <div class="text-gray-500 text-sm italic">${r['נושא'] || ''}</div>
+                </div>
+            `).join('');
+        }
+
+        // פונקציית הנגן
+        function playMedia(id, title, driveUrl, sourceUrl) {
+            const container = document.getElementById('playerContainer');
+            const mediaArea = document.getElementById('mediaArea');
+            const titleElem = document.getElementById('nowPlayingTitle');
+            
+            container.classList.remove('hidden');
+            titleElem.innerText = title;
+            window.scrollTo({ top: container.offsetTop - 20, behavior: 'smooth' });
+
+            if (sourceUrl.includes('youtube.com') || sourceUrl.includes('youtu.be')) {
+                const videoId = sourceUrl.split('v=')[1] || sourceUrl.split('/').pop();
+                mediaArea.innerHTML = `<iframe class="w-full h-full" src="https://www.youtube.com/embed/${videoId.split('&')[0]}?autoplay=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            } else if (driveUrl) {
+                mediaArea.innerHTML = `<audio controls autoplay class="w-full max-w-md"><source src="${driveUrl}" type="audio/mpeg">הדפדפן שלך לא תומך בנגן השמע.</audio>`;
+            } else {
+                mediaArea.innerHTML = `<p class="text-white">לא נמצא קישור תקין להפעלה</p>`;
+            }
+        }
+
+        function closePlayer() {
+            document.getElementById('playerContainer').classList.add('hidden');
+            document.
